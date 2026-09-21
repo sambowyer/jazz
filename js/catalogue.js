@@ -166,27 +166,38 @@ export const PROGRESSIONS = [
 ];
 
 // Session templates: blocks of { type, count, keys, minutes }.
-// `keys` = number of keys per item (progressions get 2).
+// `keys` = number of keys per item (progressions get 2). The voicing block
+// is skipped (and its minutes given to free play) when the voicing pool is empty.
 export const SESSION_TEMPLATES = {
   15: [
-    { type: "scale", count: 1, minutes: 4 },
-    { type: "arpeggio", count: 2, minutes: 4 },
-    { type: "progression", count: 1, keys: 1, minutes: 5 },
-    { type: "free", minutes: 2 },
+    { type: "scale", count: 1, minutes: 3 },
+    { type: "arpeggio", count: 1, minutes: 3 },
+    { type: "voicing", count: 1, minutes: 4 },
+    { type: "progression", count: 1, keys: 1, minutes: 4 },
+    { type: "free", minutes: 1 },
   ],
   25: [
     { type: "scale", count: 2, minutes: 5 },
-    { type: "arpeggio", count: 3, minutes: 5 },
-    { type: "progression", count: 1, keys: 2, minutes: 10 },
-    { type: "free", minutes: 5 },
+    { type: "arpeggio", count: 2, minutes: 4 },
+    { type: "voicing", count: 1, minutes: 6 },
+    { type: "progression", count: 1, keys: 2, minutes: 7 },
+    { type: "free", minutes: 3 },
   ],
   30: [
-    { type: "scale", count: 3, minutes: 7 },
+    { type: "scale", count: 2, minutes: 6 },
     { type: "arpeggio", count: 3, minutes: 6 },
-    { type: "progression", count: 1, keys: 2, minutes: 12 },
-    { type: "free", minutes: 5 },
+    { type: "voicing", count: 1, minutes: 6 },
+    { type: "progression", count: 1, keys: 2, minutes: 9 },
+    { type: "free", minutes: 3 },
   ],
 };
+
+// Chord voicing types for the voicings block (see theory.VOICING_TYPES).
+export const VOICING_POOL_OPTIONS = [
+  { id: "drop2", name: "Drop-2" },
+  { id: "drop3", name: "Drop-3" },
+  { id: "shell", name: "Shell (1–3–7)" },
+];
 
 export const DEFAULT_SETTINGS = {
   sessionLength: 25,             // 15 | 25 | 30
@@ -195,11 +206,14 @@ export const DEFAULT_SETTINGS = {
   scalePool: SCALES.filter((s) => s.essential).map((s) => s.id),
   chordPool: CHORDS.filter((c) => c.essential).map((c) => c.id),
   progressionPool: PROGRESSIONS.filter((p) => p.essential).map((p) => p.id),
+  voicingPool: ["drop2", "drop3", "shell"],
   gbSpelling: "auto",            // auto | Gb | F#
   fretLabels: "names",           // names | degrees | none
   fretCount: 15,                 // 12 | 15 | 22
   showKeySig: false,             // key signature for major-mode scales
-  progressionView: "guide",      // guide | chords
+  progressionView: "guide",      // guide | chords | voicings
+  progressionVoicing: "drop2",   // voicing type for the progression "voicings" view
+  progressionSet: 2,             // string-set index for it (2 = strings 4–1 for drop-2)
   theme: "dark",                 // dark | light
   weightByHistory: true,
   metronome: { bpm: 120, timeSig: 4, mode: "all", accent: true, dropout: 0 },

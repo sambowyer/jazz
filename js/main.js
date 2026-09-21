@@ -1,7 +1,7 @@
 // Boot, view switching, wiring. Everything DOM-related lives here or in card.js.
 
-import { ROOTS, SCALES, CHORDS, PROGRESSIONS, SCALE_GROUPS, DEFAULT_SETTINGS, scaleById, chordById, progressionById } from "./catalogue.js";
-import { pretty } from "./theory.js";
+import { ROOTS, SCALES, CHORDS, PROGRESSIONS, SCALE_GROUPS, VOICING_POOL_OPTIONS, DEFAULT_SETTINGS, scaleById, chordById, progressionById } from "./catalogue.js";
+import { pretty, VOICING_CHORD_IDS, VOICING_TYPES } from "./theory.js";
 import { generateSession, dateSeed, isoDate, randomSeed, encodeHash, decodeHash } from "./session.js";
 import { loadSettings, saveSettings, loadHistory, markDone, unmarkDone, isDone, lastPractisedMap, stats, clearHistory } from "./storage.js";
 import { renderCard } from "./card.js";
@@ -97,6 +97,7 @@ function describe(it) {
   if (it.type === "scale") return `${pretty(it.key)} ${scaleById(it.id).name}`;
   if (it.type === "arpeggio") return `${pretty(it.key)}${chordById(it.id).symbol}`;
   if (it.type === "progression") return `${progressionById(it.id).name} in ${pretty(it.key)}`;
+  if (it.type === "voicing") return `${pretty(it.key)}${chordById(it.id).symbol} ${(VOICING_TYPES.find((t) => t.id === it.voicing) || {}).name || ""} voicings`;
   return "";
 }
 
@@ -186,6 +187,10 @@ function renderExplore() {
     $("#explore-item-label").textContent = "Chord type";
     for (const c of CHORDS) sel.appendChild(new Option(`${c.symbol} — ${c.name}`, c.id));
     if (!chordById(ex.id)) ex.id = "maj7";
+  } else if (ex.kind === "voicing") {
+    $("#explore-item-label").textContent = "Chord type";
+    for (const c of CHORDS.filter((c) => VOICING_CHORD_IDS.includes(c.id))) sel.appendChild(new Option(`${c.symbol} — ${c.name}`, c.id));
+    if (!VOICING_CHORD_IDS.includes(ex.id)) ex.id = "maj7";
   } else {
     $("#explore-item-label").textContent = "Progression";
     for (const p of PROGRESSIONS) sel.appendChild(new Option(p.name, p.id));
@@ -193,7 +198,7 @@ function renderExplore() {
   }
   sel.value = ex.id;
   if (exploreCard && exploreCard._cleanup) exploreCard._cleanup();
-  exploreCard = renderCard($("#explore-card"), { type: ex.kind, id: ex.id, key: ex.root }, cardCtx());
+  exploreCard = renderCard($("#explore-card"), { type: ex.kind, id: ex.id, key: ex.root, voicing: ex.voicing || "drop2" }, cardCtx());
 }
 $$("#explore-kind button").forEach((b) => b.addEventListener("click", () => { state.explore.kind = b.dataset.kind; state.explore.id = null; renderExplore(); }));
 $("#explore-item").addEventListener("change", (e) => { state.explore.id = e.target.value; renderExplore(); });
@@ -227,6 +232,11 @@ function renderSettings() {
     <div class="settings-group">
       <h2>Arpeggio pool</h2>
       <div class="pool-grid">${CHORDS.map((x) => check("chordPool", x.id, `${x.symbol} — ${x.name}`, s.chordPool.includes(x.id))).join("")}</div>
+    </div>
+    <div class="settings-group">
+      <h2>Voicing pool</h2>
+      <div class="pool-grid">${VOICING_POOL_OPTIONS.map((x) => check("voicingPool", x.id, x.name, s.voicingPool.includes(x.id))).join("")}</div>
+      <div class="card-note">Uses the four-note chord types from the arpeggio pool. Untick all to skip the voicings block.</div>
     </div>
     <div class="settings-group">
       <h2>Progression pool</h2>
@@ -265,7 +275,7 @@ function renderSettings() {
     cb.addEventListener("change", () => {
       const pool = cb.dataset.pool;
       const list = $$(`[data-pool="${pool}"]`, root).filter((x) => x.checked).map((x) => x.value);
-      if (!list.length) { cb.checked = true; return; } // keep at least one
+      if (!list.length && pool !== "voicingPool") { cb.checked = true; return; } // keep at least one
       setSetting(pool, list);
       buildSession(state.session.seed);
     });

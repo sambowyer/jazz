@@ -157,6 +157,13 @@ input[type="range"] { accent-color: var(--accent); }
 .chord-item .num { font-family: var(--mono); color: var(--muted); font-size: 12px; margin-left: 6px; }
 .chord-item .scales { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .chord-item .scales b { color: var(--fg); font-weight: 500; }
+.chord-boxes { display: flex; flex-wrap: wrap; gap: 6px; }
+.chord-box { background: none; border: 1px solid transparent; border-radius: 8px; padding: 4px 2px 0; cursor: pointer; color: var(--fg); }
+.chord-box:hover { border-color: var(--rule-soft); }
+.chord-box.is-active { border-color: var(--accent); background: var(--bg); }
+.chord-box svg { display: block; width: 110px; height: auto; }
+.chord-box-cap { font-size: 12px; text-align: center; white-space: nowrap; margin-bottom: 2px; font-weight: 500; }
+.voicing-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 8px; }
 .free-play { text-align: center; padding: 40px 0; color: var(--muted); }
 .free-play h2 { color: var(--fg); margin-bottom: 8px; }
 
@@ -211,6 +218,10 @@ input[type="range"] { accent-color: var(--accent); }
   .btn { padding: 10px 12px; }
   .btn-sm { padding: 6px 8px; }
   .nav-row .btn { padding: 10px 10px; }
+  .chord-boxes { gap: 2px; }
+  .chord-box { padding: 2px 0 0; max-width: 80px; }
+  .chord-box svg { width: 76px; }
+  .chord-box-cap { font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
   body { --metro-h: 108px; }
 }
 @media (max-width: 400px) {

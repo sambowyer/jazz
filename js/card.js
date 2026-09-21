@@ -2,11 +2,11 @@
 // One component renders scales, arpeggios, progressions and the free-play block.
 
 import { scaleById, chordById, progressionById } from "./catalogue.js";
-import { spellScale, spellChord, transposeProgression, withOctave, scaleName, pretty, chromaOf, degreeLabel } from "./theory.js";
-import { renderScaleStave, renderArpeggioStave, renderProgressionStave } from "./stave.js";
-import { renderFretboard } from "./fretboard.js";
+import { spellScale, spellChord, transposeProgression, withOctave, scaleName, pretty, chordVoicings, voiceLeadVoicings, VOICING_TYPES, STRING_SET_NAME, chromaOf } from "./theory.js";
+import { renderScaleStave, renderArpeggioStave, renderProgressionStave, renderChordsStave } from "./stave.js";
+import { renderFretboard, chordBoxSvg } from "./fretboard.js";
 
-const KIND_LABEL = { scale: "Scale", arpeggio: "Arpeggio", progression: "Progression", free: "Free play" };
+const KIND_LABEL = { scale: "Scale", arpeggio: "Arpeggio", progression: "Progression", voicing: "Voicings", free: "Free play" };
 
 function el(tag, cls, html) {
   const e = document.createElement(tag);
@@ -27,6 +27,28 @@ function miniSeg(options, current, onChange) {
     wrap.appendChild(b);
   }
   return wrap;
+}
+
+/** A row of chord boxes; `onPick(voicing, el)` when one is tapped. */
+function chordBoxRow(voicings, { labels, rootChroma, captions = true, onPick }) {
+  const row = el("div", "chord-boxes");
+  voicings.forEach((v, i) => {
+    const box = el("button", "chord-box");
+    box.innerHTML = (captions ? `<div class="chord-box-cap">${v.symbol}</div>` : "") +
+      chordBoxSvg(v, { labels, rootChroma: rootChroma ?? v.rootChroma ?? null });
+    if (onPick) box.addEventListener("click", () => {
+      row.querySelectorAll(".chord-box").forEach((x) => x.classList.remove("is-active"));
+      box.classList.add("is-active");
+      onPick(v, i);
+    });
+    row.appendChild(box);
+  });
+  return row;
+}
+
+/** Fretboard `positions` for a voicing. */
+function voicingPositions(v, rootChroma) {
+  return v.notes.map((n) => ({ string: n.string, fret: n.fret, name: n.pretty, label: n.label, role: n.chroma === rootChroma ? "root" : "chord" }));
 }
 
 /** Build the fretboard note list for a scale (root / passing / scale). */
@@ -137,17 +159,97 @@ export function renderCard(container, item, ctx) {
       renderFretboard(fretBox, { ...fretOpts, notes: chordFretNotes(c, s) });
     };
     card.append(staveSection, chipSection, fretSection);
+  } else if (item.type === "voicing") {
+    let typeId = item.voicing || "drop2";
+    const build = () => chordVoicings(item.key, item.id, typeId, { gbSpelling: settings.gbSpelling });
+    let v = build();
+    const rootChroma = v.chord.notes[0].chroma;
+    const body = el("div");
+    const typeSeg = miniSeg(VOICING_TYPES.map((t) => [t.id, t.name]), typeId, (val) => { typeId = val; v = build(); draw(); });
+    const drawVoicings = () => {
+      headL.innerHTML = `<div class="card-kind">${KIND_LABEL.voicing}</div><h2 class="card-title">${v.title}</h2>
+        <div class="card-sub"><span>${v.chord.formula}</span><b>${v.chord.names}</b></div>
+        <div class="card-note">${typeId === "shell" ? "Three-note shells (root, 3rd, 7th) — the Freddie Green comping sound." : "Play each inversion up the neck on one string set, then the same inversion across sets. Then one chord per bar with the metronome."}</div>`;
+      body.innerHTML = "";
+      const onPick = (vv) => {
+        body.querySelectorAll(".chord-box").forEach((x) => x.classList.toggle("is-active", x._v === vv));
+        renderFretboard(fretBox, { ...fretOpts, positions: voicingPositions(vv, rootChroma) });
+        fretTitle.firstChild.textContent = `Fretboard — ${vv.symbol}`;
+      };
+      // Shells: one row, captioned by shape. Drop voicings: a row + stave per string set.
+      const groups = typeId === "shell"
+        ? [{ label: "Shapes", voicings: v.sets.map((st) => ({ ...st.voicings[0], symbol: st.label.replace(", root on", " · root on") })) }]
+        : v.sets;
+      for (const set of groups) {
+        const sec = el("div", "card-section");
+        sec.appendChild(el("div", "card-section-title", `<span>${set.label}</span>`));
+        sec.appendChild(chordBoxRow(set.voicings, { labels: fretOpts.labels, rootChroma, onPick }));
+        sec.querySelectorAll(".chord-box").forEach((x, i) => (x._v = set.voicings[i]));
+        body.appendChild(sec);
+        if (typeId !== "shell" && set.voicings.length > 1) {
+          const st = el("div", "stave");
+          sec.appendChild(st);
+          const bars = set.voicings.map((vv) => [{ symbol: vv.symbol, beats: 4 }]);
+          const voiced = set.voicings.map((vv) => vv.notes.map((n) => n.full));
+          safe(() => renderChordsStave(st, bars, voiced), st);
+        }
+      }
+      const first = v.sets[0] && v.sets[0].voicings[0];
+      if (first) {
+        renderFretboard(fretBox, { ...fretOpts, positions: voicingPositions(first, rootChroma) });
+        fretTitle.firstChild.textContent = `Fretboard — ${first.symbol} (tap a diagram)`;
+        const fb = body.querySelector(".chord-box");
+        if (fb) fb.classList.add("is-active");
+      }
+    };
+    redrawStave = drawVoicings;
+    redrawFret = () => {}; // fretboard is driven by the tapped diagram
+    const head2 = el("div", "card-section-title", "<span>Voicing type</span>");
+    head2.appendChild(typeSeg);
+    card.append(head2, body, fretSection);
   } else if (item.type === "progression") {
     const p = transposeProgression(item.id, item.key, { gbSpelling: settings.gbSpelling });
     headL.innerHTML = `<div class="card-kind">${KIND_LABEL.progression}</div><h2 class="card-title">${p.title}</h2>
       <div class="card-sub"><b>${p.chords.map((c) => c.symbol).join(" · ")}</b></div>`;
     let view = settings.progressionView || "guide";
-    staveTitle.appendChild(miniSeg([["guide", "Guide tones"], ["chords", "Chord tones"]], view, (v) => {
+    let vType = settings.progressionVoicing || "drop2";
+    let vSet = settings.progressionSet ?? 2;
+    staveTitle.appendChild(miniSeg([["guide", "Guide tones"], ["chords", "Chord tones"], ["voicings", "Voicings"]], view, (v) => {
       view = v;
       ctx.onSettingChange && ctx.onSettingChange("progressionView", v);
       redrawStave();
     }));
-    redrawStave = () => renderProgressionStave(staveBox, p, { view });
+    // Voicing controls + chord-box row, shown only in the "voicings" view.
+    const vControls = el("div", "voicing-controls");
+    const vBoxes = el("div");
+    const buildControls = () => {
+      vControls.innerHTML = "";
+      const type = VOICING_TYPES.find((t) => t.id === vType);
+      if (vSet >= type.sets.length) vSet = type.sets.length - 1;
+      vControls.appendChild(miniSeg([["drop2", "Drop-2"], ["drop3", "Drop-3"]], vType, (val) => {
+        vType = val; ctx.onSettingChange && ctx.onSettingChange("progressionVoicing", val);
+        buildControls(); redrawStave();
+      }));
+      vControls.appendChild(miniSeg(type.sets.map((st, i) => [String(i), `Strings ${STRING_SET_NAME(st)}`]), String(vSet), (val) => {
+        vSet = Number(val); ctx.onSettingChange && ctx.onSettingChange("progressionSet", vSet);
+        redrawStave();
+      }));
+    };
+    buildControls();
+    redrawStave = () => {
+      const show = view === "voicings";
+      vControls.hidden = !show; vBoxes.hidden = !show;
+      if (!show) { renderProgressionStave(staveBox, p, { view }); return; }
+      const type = VOICING_TYPES.find((t) => t.id === vType);
+      const led = voiceLeadVoicings(p.chords, vType, type.sets[vSet]);
+      renderProgressionStave(staveBox, p, { view, voicings: led });
+      vBoxes.innerHTML = "";
+      vBoxes.appendChild(chordBoxRow(led.map((vv, i) => ({ ...vv, rootChroma: chromaOf(p.chords[i].root) })), { labels: fretOpts.labels, onPick: (vv, i) => {
+        renderFretboard(fretBox, { ...fretOpts, positions: voicingPositions(vv, chromaOf(p.chords[i].root)) });
+        fretTitle.firstChild.textContent = `Fretboard — ${vv.symbol}`;
+      } }));
+    };
+    staveSection.append(vControls, vBoxes);
 
     // chord list with chord–scale suggestions; tapping one drives the fretboard
     const chordSection = el("div", "card-section");
@@ -198,10 +300,15 @@ export function renderCard(container, item, ctx) {
   const draw = () => { safe(redrawStave, staveBox); safe(redrawFret, fretBox); };
   draw();
 
-  // Re-render the stave on resize (debounced); the fretboard is a scalable SVG.
-  let t = null;
-  const ro = new ResizeObserver(() => { clearTimeout(t); t = setTimeout(() => safe(redrawStave, staveBox), 120); });
-  ro.observe(staveBox);
+  // Re-render staves when the card's width changes (debounced); the fretboard is a scalable SVG.
+  let t = null, lastW = card.getBoundingClientRect().width;
+  const ro = new ResizeObserver(() => {
+    const w = card.getBoundingClientRect().width;
+    if (w === lastW) return;
+    lastW = w;
+    clearTimeout(t); t = setTimeout(() => safe(redrawStave, staveBox), 120);
+  });
+  ro.observe(card);
   card._cleanup = () => ro.disconnect();
   return card;
 }

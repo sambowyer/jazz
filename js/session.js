@@ -3,6 +3,9 @@
 
 import { ROOTS, SESSION_TEMPLATES, scaleById, chordById, progressionById } from "./catalogue.js";
 
+// Chord types with four distinct chord tones — the ones the voicings block uses.
+const VOICING_CHORD_IDS = ["maj7", "maj6", "dom7", "min7", "min6", "minmaj7", "min7b5", "dim7", "aug7"];
+
 /** mulberry32 — small, fast, good enough for shuffling practice material. */
 export function mulberry32(seed) {
   let a = seed >>> 0;
@@ -106,9 +109,23 @@ export function generateSession({ seed, settings, lastMap = null, today = isoDat
   };
 
   const items = [];
+  const voicingPool = (settings.voicingPool || []).slice();
+  let spareMinutes = 0;
   template.forEach((block, blockIdx) => {
     if (block.type === "free") {
-      items.push({ type: "free", block: blockIdx, minutes: block.minutes });
+      items.push({ type: "free", block: blockIdx, minutes: block.minutes + spareMinutes });
+      return;
+    }
+    if (block.type === "voicing") {
+      let pool = settings.chordPool.filter((id) => VOICING_CHORD_IDS.includes(id));
+      if (!pool.length) pool = VOICING_CHORD_IDS.slice();
+      if (!voicingPool.length) { spareMinutes += block.minutes; return; }
+      const ids = weightedSample(rng, pool, block.count, (id) => itemWeight("voicing", id));
+      const keys = chooseKeys(ids.length, "voicing", ids);
+      ids.forEach((id, i) => {
+        const voicing = voicingPool[Math.floor(rng() * voicingPool.length)];
+        items.push({ type: "voicing", id, voicing, key: keys[i], block: blockIdx, minutes: block.minutes / ids.length });
+      });
       return;
     }
     if (block.type === "scale") {

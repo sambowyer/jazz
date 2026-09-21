@@ -261,3 +261,147 @@ export function scaleName(id) {
 export const midiOf = (n) => Note.midi(n);
 export const chromaOf = (n) => Note.chroma(n);
 export const noteName = (full) => Note.get(full).pc;
+
+// ---------------------------------------------------------------------------
+// Chord voicings (drop-2, drop-3, shells) on the guitar.
+// A drop voicing is a precisely defined set of pitches, so the frets follow
+// from it: put the bass on the lowest string of the set, then each voice is
+// the next occurrence of its pitch class above the previous voice.
+
+export const OPEN_STRINGS = [40, 45, 50, 55, 59, 64]; // string index 0 = low E (E2)
+export const STRING_SET_NAME = (strings) => `${6 - strings[0]}–${6 - strings[strings.length - 1]}`;
+
+export const VOICING_TYPES = [
+  { id: "drop2", name: "Drop-2", sets: [[0, 1, 2, 3], [1, 2, 3, 4], [2, 3, 4, 5]] },
+  { id: "drop3", name: "Drop-3", sets: [[0, 2, 3, 4], [1, 3, 4, 5]] },
+  { id: "shell", name: "Shell", sets: [] },
+];
+// Shells: fixed three-note shapes (roles index the chord tones 1-3-5-7).
+const SHELL_SHAPES = [
+  { roles: [0, 3, 1], strings: [0, 2, 3], label: "1–7–3, root on 6th" },
+  { roles: [0, 1, 3], strings: [1, 2, 3], label: "1–3–7, root on 5th" },
+  { roles: [0, 3, 1], strings: [1, 3, 4], label: "1–7–3, root on 5th" },
+];
+// Chord types with four distinct chord tones (voicable); the others map to
+// the nearest four-note chord for comping.
+export const VOICING_CHORD_IDS = ["maj7", "maj6", "dom7", "min7", "min6", "minmaj7", "min7b5", "dim7", "aug7"];
+const VOICING_SUBSTITUTE = { dom7alt: "aug7", dom7b9: "dom7", dom7sharp11: "dom7" };
+export const voicingChordId = (id) => VOICING_SUBSTITUTE[id] || id;
+
+/** Bass→top chord-tone order for inversion k (k = index of the bass tone). */
+function rolesFor(type, k) {
+  if (type === "drop2") return [k, (k + 2) % 4, (k + 3) % 4, (k + 1) % 4];
+  if (type === "drop3") return [k, (k + 3) % 4, (k + 1) % 4, (k + 2) % 4];
+  throw new Error(`No inversions for ${type}`);
+}
+
+/** Note name with the octave that gives `midi`, keeping the spelling of `pc`. */
+function nameAtMidi(pc, midi) {
+  let oct = Math.floor(midi / 12) - 1;
+  if (Note.midi(pc + oct) !== midi) oct += Note.midi(pc + oct) > midi ? -1 : 1;
+  return pc + oct;
+}
+
+/**
+ * Place `roles` (indices into `tones`) on `strings` (low→high). Returns
+ * { strings, frets, midis, notes, position } or null if unplayable.
+ */
+function placeVoicing(tones, roles, strings, maxFret = 15, maxSpan = 5) {
+  const bassStr = strings[0];
+  const bassPc = tones[roles[0]].chroma;
+  let bass = OPEN_STRINGS[bassStr] + ((bassPc - (OPEN_STRINGS[bassStr] % 12) + 12) % 12);
+  for (let oct = 0; oct < 2; oct++, bass += 12) {
+    const midis = [bass];
+    for (let i = 1; i < roles.length; i++) {
+      const pc = tones[roles[i]].chroma;
+      const prev = midis[i - 1];
+      let m = prev + ((pc - (prev % 12) + 12) % 12);
+      if (m === prev) m += 12;
+      midis.push(m);
+    }
+    const frets = midis.map((m, i) => m - OPEN_STRINGS[strings[i]]);
+    if (frets.some((f) => f < 0 || f > maxFret)) continue;
+    const fretted = frets.filter((f) => f > 0);
+    const span = fretted.length ? Math.max(...fretted) - Math.min(...fretted) : 0;
+    if (span > maxSpan) continue;
+    return {
+      strings, frets, midis,
+      position: fretted.length ? Math.min(...fretted) : 0,
+      notes: roles.map((r, i) => ({ ...tones[r], string: strings[i], fret: frets[i], midi: midis[i], full: nameAtMidi(tones[r].name, midis[i]) })),
+    };
+  }
+  return null;
+}
+
+function slashSymbol(spelled, v) {
+  const bass = v.notes[0];
+  return spelled.symbol + (bass.chroma !== spelled.notes[0].chroma ? "/" + bass.pretty : "");
+}
+
+/**
+ * All playable voicings of a chord for a voicing type.
+ * Returns { chord (spelled), type, sets: [{ label, strings, voicings: [...] }] }
+ * with each set's voicings ordered up the neck. Every voicing carries
+ * symbol (e.g. "Cmaj7/E"), inversion (bass tone index) and inversionName.
+ */
+export function chordVoicings(rootIn, chordIdIn, typeId, opts = {}) {
+  const chordId = voicingChordId(chordIdIn);
+  const type = VOICING_TYPES.find((t) => t.id === typeId);
+  if (!type) throw new Error(`Unknown voicing type ${typeId}`);
+  const spelled = spellChord(rootIn, chordId, { extensions: false, gbSpelling: opts.gbSpelling, exactRoot: opts.exactRoot });
+  const tones = spelled.notes;
+  const maxFret = opts.maxFret || 15;
+  const INV = ["root position", "1st inversion", "2nd inversion", "3rd inversion"];
+  const sets = [];
+  if (typeId === "shell") {
+    for (const sh of SHELL_SHAPES) {
+      const v = placeVoicing(tones, sh.roles, sh.strings, maxFret, 4);
+      if (v) sets.push({ label: sh.label, strings: sh.strings, voicings: [{ ...v, symbol: slashSymbol(spelled, v), inversion: 0, inversionName: sh.label }] });
+    }
+  } else {
+    for (const strings of type.sets) {
+      const voicings = [];
+      for (let k = 0; k < 4; k++) {
+        const v = placeVoicing(tones, rolesFor(typeId, k), strings, maxFret);
+        if (v) voicings.push({ ...v, symbol: slashSymbol(spelled, v), inversion: k, inversionName: INV[k] });
+      }
+      voicings.sort((a, b) => a.position - b.position);
+      sets.push({ label: `Strings ${STRING_SET_NAME(strings)}`, strings, voicings });
+    }
+  }
+  return { kind: "voicing", chord: spelled, type, sets, title: `${spelled.symbol} — ${type.name} voicings` };
+}
+
+/**
+ * Voice-lead a progression with drop voicings on one string set: for each
+ * chord pick the inversion that moves least from the previous grip (dynamic
+ * programming over the whole sequence). chords = transposeProgression().chords.
+ * Returns one voicing per chord (with symbol = the progression's chord symbol).
+ */
+export function voiceLeadVoicings(chords, typeId, strings, opts = {}) {
+  const maxFret = opts.maxFret || 15;
+  const cands = chords.map((c) => {
+    const spelled = spellChord(c.root, voicingChordId(c.chordId), { extensions: false, exactRoot: true });
+    const out = [];
+    for (let k = 0; k < 4; k++) {
+      const v = placeVoicing(spelled.notes, rolesFor(typeId, k), strings, maxFret);
+      if (v) out.push({ ...v, symbol: c.symbol + (k ? "/" + v.notes[0].pretty : ""), inversion: k });
+    }
+    return out;
+  });
+  const move = (a, b) => a.frets.reduce((s, f, i) => s + Math.abs(f - b.frets[i]), 0);
+  // Viterbi: best[i][j] = min cost ending at chord i with candidate j.
+  let best = cands[0].map((v) => ({ cost: 0.01 * Math.abs(v.position - 5), path: [v] }));
+  for (let i = 1; i < cands.length; i++) {
+    best = cands[i].map((v) => {
+      let bc = Infinity, bp = null;
+      best.forEach((b) => {
+        const c = b.cost + move(b.path[b.path.length - 1], v) + 0.01 * Math.abs(v.position - 5);
+        if (c < bc) { bc = c; bp = b.path; }
+      });
+      return { cost: bc, path: [...bp, v] };
+    });
+  }
+  if (!best.length) return [];
+  return best.reduce((a, b) => (b.cost < a.cost ? b : a)).path;
+}

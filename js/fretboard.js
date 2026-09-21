@@ -18,9 +18,12 @@ const ROLE_STYLE = {
  * @param {number} [o.frets=15]
  * @param {"names"|"degrees"|"none"} [o.labels="names"]
  * @param {Array<{chroma:number,name:string,label:string,role:string}>} o.notes
+ * @param {Array<{string:number,fret:number,name:string,label:string,role:string}>} [o.positions]
+ *        — if given, only these exact positions are drawn (string 0 = low E)
  */
-export function renderFretboard(container, { frets = 15, labels = "names", notes = [] }) {
+export function renderFretboard(container, { frets = 15, labels = "names", notes = [], positions = null }) {
   const byChroma = new Map(notes.map((n) => [n.chroma, n]));
+  const byPos = positions ? new Map(positions.map((p) => [`${p.string}:${p.fret}`, p])) : null;
   const fretW = 46, nutW = 34, strH = 24, top = 26, left = 8, right = 8;
   const W = left + nutW + frets * fretW + right;
   const H = top + strH * 5 + 30;
@@ -57,7 +60,7 @@ export function renderFretboard(container, { frets = 15, labels = "names", notes
   for (let i = 0; i < 6; i++) {
     for (let f = 0; f <= frets; f++) {
       const chroma = (TUNING[i] + f) % 12;
-      const n = byChroma.get(chroma);
+      const n = byPos ? byPos.get(`${5 - i}:${f}`) : byChroma.get(chroma);
       if (!n) continue;
       const st = ROLE_STYLE[n.role] || ROLE_STYLE.scale;
       const cx = f === 0 ? nutX - 3 - r - 6 : fretX(f) - fretW / 2;
@@ -73,4 +76,41 @@ export function renderFretboard(container, { frets = 15, labels = "names", notes
   // Keep the circles readable on phones: below ~85% of natural size the
   // diagram scrolls horizontally instead of shrinking further.
   container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="min-width: ${Math.round(W * 0.85)}px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fretboard diagram">${s}</svg>`;
+}
+
+/**
+ * A chord box (vertical diagram): strings low→high left→right, five frets,
+ * base-fret label, x/o markers. Returns an SVG string.
+ * @param {{strings:number[], frets:number[], notes:[{name,label,role?}]}} v  string 0 = low E
+ */
+export function chordBoxSvg(v, { labels = "names", rootChroma = null } = {}) {
+  const sx = 13, fy = 16, x0 = 24, y0 = 20, W = x0 + sx * 5 + 12, H = y0 + fy * 5 + 8;
+  const fretted = v.frets.filter((f) => f > 0);
+  const maxF = fretted.length ? Math.max(...fretted) : 0;
+  const base = maxF <= 5 ? 1 : Math.min(...fretted);
+  let s = "";
+  // grid
+  for (let i = 0; i < 6; i++) s += `<line x1="${x0 + i * sx}" y1="${y0}" x2="${x0 + i * sx}" y2="${y0 + fy * 5}" style="stroke: var(--muted); stroke-width: 1"/>`;
+  for (let f = 0; f <= 5; f++) s += `<line x1="${x0}" y1="${y0 + f * fy}" x2="${x0 + sx * 5}" y2="${y0 + f * fy}" style="stroke: var(--muted); stroke-width: 1"/>`;
+  if (base === 1) s += `<rect x="${x0 - 1}" y="${y0 - 2.5}" width="${sx * 5 + 2}" height="3" style="fill: var(--fg)"/>`;
+  else s += `<text x="${x0 - 7}" y="${y0 + fy / 2 + 4}" text-anchor="end" style="fill: var(--muted); font: 10px var(--mono)">${base}</text>`;
+  // markers + dots
+  const onString = new Map(v.strings.map((st, i) => [st, i]));
+  for (let st = 0; st < 6; st++) {
+    const x = x0 + st * sx;
+    const i = onString.get(st);
+    if (i == null) { s += `<text x="${x}" y="${y0 - 6}" text-anchor="middle" style="fill: var(--muted); font: 10px var(--sans)">×</text>`; continue; }
+    const f = v.frets[i], n = v.notes[i];
+    const isRoot = n.role === "root" || (rootChroma != null && n.chroma === rootChroma);
+    const txt = labels === "none" ? "" : labels === "degrees" ? n.label : n.pretty || n.name;
+    if (f === 0) {
+      s += `<circle cx="${x}" cy="${y0 - 8}" r="4.5" style="fill: none; stroke: ${isRoot ? "var(--accent)" : "var(--fg)"}; stroke-width: 1.2"/>`;
+      continue;
+    }
+    const y = y0 + (f - base) * fy + fy / 2;
+    s += `<circle cx="${x}" cy="${y}" r="6.5" style="fill: ${isRoot ? "var(--accent)" : "var(--fg)"}"/>`;
+    if (txt) s += `<text x="${x}" y="${y + 2.8}" text-anchor="middle" style="fill: var(--bg); font: 600 ${txt.length > 1 ? 7 : 8}px var(--sans)">${txt}</text>`;
+  }
+  // open-string labels below? (skip — keep the box compact)
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W * 1.15}" height="${H * 1.15}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="chord diagram">${s}</svg>`;
 }

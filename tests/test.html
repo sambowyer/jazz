@@ -15,7 +15,7 @@
   <pre id="out"></pre>
   <script type="module">
     import { ROOTS, SCALES, CHORDS, PROGRESSIONS, DEFAULT_SETTINGS, scaleById } from "../js/catalogue.js";
-    import { spellScale, spellChord, transposeProgression, voiceLeadGuideTones, chooseOctave, degreeLabel, resolveRoot, midiOf } from "../js/theory.js";
+    import { spellScale, spellChord, transposeProgression, voiceLeadGuideTones, chooseOctave, degreeLabel, resolveRoot, midiOf, chordVoicings, voiceLeadVoicings, VOICING_TYPES, VOICING_CHORD_IDS, OPEN_STRINGS } from "../js/theory.js";
     import { generateSession, mulberry32, encodeHash, decodeHash, dateSeed } from "../js/session.js";
     import { nextBeatTimes } from "../js/metronome.js";
     import { lastPractisedMap, stats } from "../js/storage.js";
@@ -99,6 +99,67 @@
     }
     assert(maxMove <= 2, `ii–V–I guide tones move by ≤ a major 2nd per voice (max ${maxMove})`);
     assert(led.every((p) => midiOf(p[0]) < midiOf(p[1])), "guide-tone pairs are sorted low→high");
+
+    // ---- chord voicings ----
+    const grip = (v) => { const a = ["x", "x", "x", "x", "x", "x"]; v.strings.forEach((st, i) => (a[st] = v.frets[i])); return a.join(" "); };
+    const findInv = (r, setIdx, inv) => r.sets[setIdx].voicings.find((v) => v.inversion === inv);
+    const cd2 = chordVoicings("C", "maj7", "drop2");
+    assert(grip(findInv(cd2, 2, 0)) === "x x 10 12 12 12", "Cmaj7 drop-2 root position, strings 4–1");
+    assert(grip(findInv(cd2, 2, 1)) === "x x 2 4 1 3", "Cmaj7/E drop-2, strings 4–1");
+    assert(grip(findInv(cd2, 2, 2)) === "x x 5 5 5 7", "Cmaj7/G drop-2, strings 4–1");
+    assert(grip(findInv(cd2, 2, 3)) === "x x 9 9 8 8", "Cmaj7/B drop-2, strings 4–1");
+    assert(grip(findInv(cd2, 0, 0)) === "8 10 9 9 x x", "Cmaj7 drop-2 root position, strings 6–3");
+    assert(grip(findInv(cd2, 1, 0)) === "x 3 5 4 5 x", "Cmaj7 drop-2 root position, strings 5–2");
+    const cd3 = chordVoicings("C", "maj7", "drop3");
+    assert(grip(findInv(cd3, 0, 0)) === "8 x 9 9 8 x", "Cmaj7 drop-3 root position, strings 6–2");
+    assert(grip(findInv(cd3, 1, 0)) === "x 3 x 4 5 3", "Cmaj7 drop-3 root position, strings 5–1");
+    const g7 = chordVoicings("G", "dom7", "drop2");
+    assert(grip(findInv(g7, 2, 0)) === "x x 5 7 6 7", "G7 drop-2 root position, strings 4–1");
+    const sh = chordVoicings("C", "dom7", "shell");
+    assert(sh.sets.map((x) => grip(x.voicings[0])).join(" | ") === "8 x 8 9 x x | x 3 2 3 x x | x 3 x 3 5 x", "C7 shells (1–7–3 on 6th, 1–3–7 on 5th, 1–7–3 on 5th)");
+    assert(findInv(cd2, 2, 1).symbol === "Cmaj7/E" && findInv(cd2, 2, 0).symbol === "Cmaj7", "voicing slash symbols");
+    {
+      let ok = true, n = 0;
+      for (const r of ROOTS) for (const id of VOICING_CHORD_IDS) for (const t of ["drop2", "drop3"]) {
+        const res = chordVoicings(r, id, t);
+        for (const set of res.sets) {
+          if (set.voicings.length !== 4) { ok = false; console.error("missing inversion", r, id, t, set.label, set.voicings.length); }
+          for (const v of set.voicings) {
+            n++;
+            const asc = v.midis.every((m, i) => i === 0 || m > v.midis[i - 1]);
+            const pcs = new Set(v.midis.map((m) => m % 12));
+            const fretted = v.frets.filter((f) => f > 0);
+            const span = fretted.length ? Math.max(...fretted) - Math.min(...fretted) : 0;
+            const onString = v.frets.every((f, i) => OPEN_STRINGS[v.strings[i]] + f === v.midis[i]);
+            if (!asc || pcs.size !== 4 || span > 5 || !onString || v.frets.some((f) => f < 0 || f > 15)) { ok = false; console.error("bad voicing", r, id, t, grip(v)); }
+          }
+        }
+      }
+      assert(ok, `all ${n} drop-2/drop-3 voicings: 4 inversions per string set, ascending, 4 pitch classes, span ≤ 5, frets 0–15, in all 12 keys`);
+    }
+    {
+      const led = voiceLeadVoicings(transposeProgression("ii_V_I", "C").chords, "drop2", [2, 3, 4, 5]);
+      assert(led.map(grip).join(" | ") === "x x 7 7 6 8 | x x 5 7 6 7 | x x 5 5 5 7 | x x 5 5 5 5", "ii–V–I in C voice-led with drop-2 on strings 4–1 stays in one position");
+      let ok = true;
+      for (const p of PROGRESSIONS) for (const r of ROOTS) for (const t of VOICING_TYPES.filter((t) => t.sets.length)) for (const st of t.sets) {
+        const ch = transposeProgression(p.id, r).chords;
+        const v = voiceLeadVoicings(ch, t.id, st);
+        if (v.length !== ch.length) { ok = false; console.error("voice leading gap", p.id, r, t.id, st); }
+        for (let i = 1; i < v.length; i++) {
+          const mv = v[i].frets.reduce((s2, f, k) => s2 + Math.abs(f - v[i - 1].frets[k]), 0);
+          if (mv > 16) { ok = false; console.error("big jump", p.id, r, t.id, st, grip(v[i - 1]), grip(v[i])); }
+        }
+      }
+      assert(ok, "every progression voice-leads with every drop type / string set in all keys, no jump > 16 frets total");
+    }
+    {
+      const s = generateSession({ seed: 3, settings: DEFAULT_SETTINGS });
+      const v = s.items.find((i) => i.type === "voicing");
+      assert(v && VOICING_CHORD_IDS.includes(v.id) && ["drop2", "drop3", "shell"].includes(v.voicing) && v.key, `session has a voicing item (${v && v.key}${v && v.id} ${v && v.voicing})`);
+      const s2 = generateSession({ seed: 3, settings: { ...DEFAULT_SETTINGS, voicingPool: [] } });
+      const free = s2.items.find((i) => i.type === "free");
+      assert(!s2.items.some((i) => i.type === "voicing") && free.minutes === 9, "empty voicing pool skips the block and gives its minutes to free play");
+    }
 
     // ---- session generator ----
     const a = generateSession({ seed: 20260921, settings: DEFAULT_SETTINGS });

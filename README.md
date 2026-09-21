@@ -8,7 +8,11 @@ with a built-in metronome.
 - **Today** — today's session (same all day; 🎲 reroll for a new one; the URL
   holds the seed so it can be bookmarked). Prev/Next, a per-exercise timer and
   a "mark done" button that feeds a practice log.
-- **Explore** — pick any root × scale / chord type / progression.
+- **Voicings** — drop-2, drop-3 and shell grips for any chord type, computed
+  (not hand-entered) for every inversion and string set, as chord boxes plus the
+  stacked notes on the stave. Progressions also get a "Voicings" view that
+  voice-leads the chords with drop voicings on a chosen string set.
+- **Explore** — pick any root × scale / chord type / progression / voicing.
 - **Settings** — which scales/chords/progressions go in the pool, key-selection
   mode (random / cycle of fourths / one key), session length, display prefs.
 - **Metronome** — Web Audio look-ahead scheduler, tap tempo, 4/4 or 3/4,

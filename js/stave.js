@@ -115,22 +115,28 @@ export function renderArpeggioStave(container, notes) {
 
 /**
  * Progression: one stave per bar, chord symbols above, guide tones (3rd & 7th)
- * voice-led as half/whole notes — or full chord tones stacked (view: "chords").
- * p = theory.transposeProgression(...) result.
+ * voice-led as half/whole notes — or full chord tones stacked (view: "chords"),
+ * or explicit voicings (view: "voicings", with opts.voicings from
+ * theory.voiceLeadVoicings). p = theory.transposeProgression(...) result.
  */
-export function renderProgressionStave(container, p, { view = "guide" } = {}) {
+export function renderProgressionStave(container, p, { view = "guide", voicings = null } = {}) {
+  let voiced;
+  if (view === "voicings" && voicings) voiced = voicings.map((v) => v.notes.map((n) => n.full));
+  else if (view === "chords") voiced = p.chords.map((c) => stackChord(c));
+  else voiced = voiceLeadGuideTones(p.chords.map((c) => c.guide));
+  renderChordsStave(container, p.bars, voiced);
+}
+
+/**
+ * Bars of stacked chords. bars = [[{ symbol, beats }, ...], ...] and voiced =
+ * one array of note names (with octaves) per chord, in bar order.
+ */
+export function renderChordsStave(container, bars, voiced, { perLineWide = 4 } = {}) {
   const width = containerWidth(container);
   if (width < 40) return;
-  const chords = p.chords;
-  const bars = p.bars;
-  const perLine = width >= 640 ? 4 : 2;
+  const perLine = width >= 640 ? perLineWide : Math.min(2, perLineWide);
   const lines = [];
   for (let i = 0; i < bars.length; i += perLine) lines.push(bars.slice(i, i + perLine));
-
-  // Pitches per chord
-  let voiced;
-  if (view === "chords") voiced = chords.map((c) => stackChord(c));
-  else voiced = voiceLeadGuideTones(chords.map((c) => c.guide));
 
   const ext = extent(voiced.flat().map(midiOf));
   const topPad = Math.max(0, ext.above + 22 - LINE_TOP); // chord symbols sit above the notes
