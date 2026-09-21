@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<!--
+  Jazz guitar practice app. Static, no build step. See PLAN.md.
+  Vendored libs: Tonal 6.4.3 (lib/tonal.min.js), VexFlow 4.2.5 (lib/vexflow.js).
+-->
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1b1815">
+  <title>Jazz practice</title>
+  <link rel="stylesheet" href="./style.css?v=1">
+  <script src="./lib/tonal.min.js"></script>
+  <script src="./lib/vexflow.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">♩ jazz practice</h1>
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" data-view="today" role="tab">Today</button>
+      <button class="tab" data-view="explore" role="tab">Explore</button>
+      <button class="tab" data-view="settings" role="tab">Settings</button>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section id="view-today" class="view is-active" data-view="today">
+      <div class="session-bar">
+        <div class="session-meta">
+          <span id="session-date"></span>
+          <span id="session-progress" class="progress"></span>
+        </div>
+        <div class="session-actions">
+          <button id="btn-reroll" class="btn btn-ghost" title="Reroll today's session">🎲 Reroll</button>
+        </div>
+      </div>
+      <div id="session-overview" class="overview"></div>
+      <div id="today-card" class="card-slot"></div>
+      <div class="nav-row">
+        <button id="btn-prev" class="btn">← Prev</button>
+        <div id="block-timer" class="timer" title="Suggested time for this block"></div>
+        <button id="btn-done" class="btn btn-accent">✓ Done</button>
+        <button id="btn-next" class="btn">Next →</button>
+      </div>
+    </section>
+
+    <section id="view-explore" class="view" data-view="explore">
+      <div class="explore-controls">
+        <div class="field">
+          <label>Root</label>
+          <div id="explore-roots" class="chip-row"></div>
+        </div>
+        <div class="field">
+          <label>Type</label>
+          <div class="seg" id="explore-kind">
+            <button data-kind="scale" class="is-active">Scale</button>
+            <button data-kind="arpeggio">Arpeggio</button>
+            <button data-kind="progression">Progression</button>
+          </div>
+        </div>
+        <div class="field">
+          <label id="explore-item-label">Scale</label>
+          <select id="explore-item"></select>
+        </div>
+      </div>
+      <div id="explore-card" class="card-slot"></div>
+    </section>
+
+    <section id="view-settings" class="view" data-view="settings">
+      <div id="settings-root"></div>
+    </section>
+  </main>
+
+  <footer id="metronome" class="metro">
+    <div class="metro-row">
+      <button id="metro-toggle" class="btn btn-accent metro-play" title="Start/stop (Space)">▶</button>
+      <div class="metro-bpm">
+        <button id="metro-minus" class="btn btn-sm" title="−1 BPM (↓)">−</button>
+        <input id="metro-bpm" type="number" min="40" max="240" value="120" inputmode="numeric">
+        <button id="metro-plus" class="btn btn-sm" title="+1 BPM (↑)">+</button>
+      </div>
+      <button id="metro-tap" class="btn btn-sm" title="Tap tempo (T)">Tap</button>
+      <div id="metro-dots" class="metro-dots" aria-hidden="true"></div>
+      <button id="metro-more" class="btn btn-sm btn-ghost" title="Metronome options">⋯</button>
+    </div>
+    <input id="metro-slider" type="range" min="40" max="240" value="120" class="metro-slider">
+    <div id="metro-options" class="metro-options" hidden>
+      <div class="field-inline">
+        <label>Time</label>
+        <div class="seg" id="metro-timesig">
+          <button data-val="4" class="is-active">4/4</button>
+          <button data-val="3">3/4</button>
+        </div>
+      </div>
+      <div class="field-inline">
+        <label>Click</label>
+        <div class="seg" id="metro-mode">
+          <button data-val="all" class="is-active">All beats</button>
+          <button data-val="24">2 &amp; 4</button>
+        </div>
+      </div>
+      <div class="field-inline">
+        <label><input type="checkbox" id="metro-accent" checked> Accent beat 1</label>
+      </div>
+      <div class="field-inline">
+        <label>Drop-out</label>
+        <div class="seg" id="metro-dropout">
+          <button data-val="0" class="is-active">Off</button>
+          <button data-val="2">2 on / 2 off</button>
+          <button data-val="4">4 on / 4 off</button>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="./js/main.js?v=1"></script>
+</body>
+</html>

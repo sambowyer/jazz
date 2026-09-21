@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>jazz — tests</title>
+  <style>
+    body { font-family: ui-monospace, monospace; background: #1b1815; color: #ece3d5; padding: 20px; }
+    .pass { color: #8fbf8f; } .fail { color: #e07a6a; font-weight: bold; }
+    h1 { font-size: 18px; } pre { white-space: pre-wrap; }
+  </style>
+  <script src="../lib/tonal.min.js"></script>
+</head>
+<body>
+  <h1>jazz — tests</h1>
+  <pre id="out"></pre>
+  <script type="module">
+    import { ROOTS, SCALES, CHORDS, PROGRESSIONS, DEFAULT_SETTINGS, scaleById } from "../js/catalogue.js";
+    import { spellScale, spellChord, transposeProgression, voiceLeadGuideTones, chooseOctave, degreeLabel, resolveRoot, midiOf } from "../js/theory.js";
+    import { generateSession, mulberry32, encodeHash, decodeHash, dateSeed } from "../js/session.js";
+    import { nextBeatTimes } from "../js/metronome.js";
+    import { lastPractisedMap, stats } from "../js/storage.js";
+
+    const out = document.getElementById("out");
+    let pass = 0, fail = 0;
+    function assert(cond, msg) {
+      if (cond) { pass++; out.innerHTML += `<span class="pass">✓</span> ${msg}\n`; }
+      else { fail++; out.innerHTML += `<span class="fail">✗ ${msg}</span>\n`; console.error("FAIL:", msg); }
+    }
+    const names = (r) => r.notes.map((n) => n.name).join(" ");
+
+    // ---- spelling ----
+    assert(names(spellScale("Gb", "ionian")).includes("Cb"), "Gb major contains Cb");
+    assert(names(spellScale("F#", "ionian")).includes("E#"), "F# major contains E#");
+    assert(names(spellChord("B", "dom7")) === "B D# F# A C# G#", "B7 arpeggio = B D# F# A (+9, 13)");
+    assert(names(spellChord("B", "dom7", { extensions: false })) === "B D# F# A", "B7 chord tones only");
+    assert(spellScale("C", "altered").formula === "1 ♭9 ♯9 3 ♭5 ♭13 ♭7", "altered scale labels");
+    assert(names(spellScale("C", "altered")) === "C Db Eb E Gb Ab Bb", "C altered spelling");
+    assert(names(spellScale("Gb", "aeolian")) === "F# G# A B C# D E", "Gb minor auto-respells as F# minor");
+    assert(names(spellScale("Gb", "ionian", { gbSpelling: "F#" })).startsWith("F#"), "forced F# spelling");
+    assert(names(spellScale("F#", "ionian", { gbSpelling: "Gb" })).startsWith("Gb"), "forced Gb spelling");
+    assert(resolveRoot("Ab", "1P 2m 3m 3M 5d 6m 7m") === "G#", "Ab altered respells as G#");
+    assert(!/##/.test(names(spellChord("F#", "dom7alt"))), "F#7alt has no double sharps");
+    assert(spellChord("C", "dim7").formula === "R ♭3 ♭5 ♭♭7", "dim7 degree labels");
+    assert(degreeLabel("4A") === "♯4" && degreeLabel("9m") === "♭9" && degreeLabel("10m") === "♯9" && degreeLabel("13m") === "♭13", "degreeLabel");
+    assert(spellScale("C", "bebop_dom").notes[7].passing === true, "bebop passing tone marked");
+
+    // ---- catalogue integrity ----
+    for (const s of SCALES) {
+      const n = s.intervals.split(" ").length;
+      assert(n >= 5 && n <= 8, `${s.id} has 5–8 notes (${n})`);
+      for (const r of ROOTS) {
+        const sp = spellScale(r, s.id);
+        const chromas = new Set(sp.notes.map((x) => x.chroma));
+        if (chromas.size !== sp.notes.length) assert(false, `${r} ${s.id} has duplicate pitch classes`);
+        if (sp.notes.some((x) => /##|bb/.test(x.name))) assert(false, `${sp.title} has a double accidental: ${names(sp)}`);
+        if (sp.notes.some((x, i) => i > 0 && x.midi <= sp.notes[i - 1].midi)) assert(false, `${sp.title} is not ascending: ${names(sp)}`);
+      }
+    }
+    assert(true, "no scale has duplicate pitch classes or double accidentals in any key");
+    assert(names(spellScale("Eb", "blues")) === "Eb Gb Ab A Bb Db", "Eb blues keeps the Eb root, ♭5 spelled A");
+    assert(names(spellScale("B", "whole_tone")) === "B C# D# F G A", "B whole tone spelled pragmatically");
+    assert(names(spellScale("Ab", "dim_hw")) === "Ab A B C D Eb F Gb", "Ab HW diminished spelled pragmatically");
+    assert(names(spellScale("Eb", "locrian")) === "D# E F# G# A B C#", "Eb Locrian respells as D# Locrian");
+    assert(transposeProgression("tritone_sub", "Gb").chords[1].symbol === "G7", "tritone sub in Gb is G7, not A𝄫7");
+    for (const c of CHORDS) for (const r of ROOTS) {
+      const sp = spellChord(r, c.id);
+      if (sp.notes.some((x) => /##|bb/.test(x.name))) assert(false, `${sp.title} has a double accidental: ${names(sp)}`);
+    }
+    assert(true, "no arpeggio has double accidentals in any key");
+    for (const c of CHORDS) {
+      assert(c.scales.length >= 1 && c.scales.every(scaleById), `${c.id} has valid chord–scale suggestions`);
+    }
+    for (const p of PROGRESSIONS) {
+      let ok = true;
+      for (const r of ROOTS) {
+        try {
+          const t = transposeProgression(p.id, r);
+          for (const c of t.chords) if (!c.scales.length || !c.scales.every(scaleById)) ok = false;
+          for (const c of t.chords) if (/##|bb/.test(c.root)) ok = false;
+          const beats = t.bars.map((b) => b.reduce((n, c) => n + c.beats, 0));
+          if (beats.some((b) => b !== 4)) ok = false;
+        } catch (e) { ok = false; console.error(e); }
+      }
+      assert(ok, `${p.id} transposes to all 12 keys, every chord has scales, every bar has 4 beats`);
+    }
+
+    // ---- octave / ranges ----
+    for (const r of ROOTS) {
+      const m = midiOf(r + chooseOctave(r));
+      assert(m >= 52 && m <= 63, `chooseOctave(${r}) → MIDI ${m} in [52, 63]`);
+    }
+
+    // ---- voice leading ----
+    const t = transposeProgression("ii_V_I", "C");
+    const led = voiceLeadGuideTones(t.chords.map((c) => c.guide));
+    let maxMove = 0;
+    for (let i = 1; i < led.length; i++) {
+      for (let v = 0; v < 2; v++) maxMove = Math.max(maxMove, Math.abs(midiOf(led[i][v]) - midiOf(led[i - 1][v])));
+    }
+    assert(maxMove <= 2, `ii–V–I guide tones move by ≤ a major 2nd per voice (max ${maxMove})`);
+    assert(led.every((p) => midiOf(p[0]) < midiOf(p[1])), "guide-tone pairs are sorted low→high");
+
+    // ---- session generator ----
+    const a = generateSession({ seed: 20260921, settings: DEFAULT_SETTINGS });
+    const b = generateSession({ seed: 20260921, settings: DEFAULT_SETTINGS });
+    assert(JSON.stringify(a.items) === JSON.stringify(b.items), "session is deterministic for a seed");
+    const c = generateSession({ seed: 20260922, settings: DEFAULT_SETTINGS });
+    assert(JSON.stringify(a.items) !== JSON.stringify(c.items), "different seed → different session");
+    for (const blockIdx of new Set(a.items.map((i) => i.block))) {
+      const keys = a.items.filter((i) => i.block === blockIdx && i.key).map((i) => i.key);
+      assert(new Set(keys).size === keys.length, `block ${blockIdx} has no repeated keys (${keys.join(" ")})`);
+    }
+    assert(a.items.every((i) => i.type === "free" || i.minutes > 0), "every item has minutes");
+    const cyc = generateSession({ seed: 1, settings: { ...DEFAULT_SETTINGS, keyMode: "cycle" } });
+    const ck = cyc.items.filter((i) => i.key).map((i) => ROOTS.indexOf(i.key));
+    assert(ck.every((k, i) => i === 0 || k === (ck[i - 1] + 1) % 12), "cycle mode steps around the cycle of fourths");
+    const fx = generateSession({ seed: 1, settings: { ...DEFAULT_SETTINGS, keyMode: "fixed", fixedKey: "Eb" } });
+    assert(fx.items.filter((i) => i.key).every((i) => i.key === "Eb"), "fixed mode uses one key");
+    for (const len of [15, 25, 30]) {
+      const s = generateSession({ seed: 7, settings: { ...DEFAULT_SETTINGS, sessionLength: len } });
+      const mins = s.items.reduce((n, i) => n + (i.minutes || 0), 0);
+      assert(Math.abs(mins - len) < 0.01, `${len}-minute template sums to ${len} minutes (${mins})`);
+    }
+    // weighting: an item practised today should be picked less often than one never practised
+    {
+      const lastMap = { "scale:ionian": "2026-09-21", "scale:ionian@C": "2026-09-21" };
+      let ion = 0, N = 300;
+      for (let i = 0; i < N; i++) {
+        const s = generateSession({ seed: i, settings: { ...DEFAULT_SETTINGS, scalePool: ["ionian", "dorian"], sessionLength: 15 }, lastMap, today: "2026-09-21" });
+        if (s.items.find((it) => it.type === "scale").id === "ionian") ion++;
+      }
+      assert(ion < N * 0.15, `history weighting: just-practised scale chosen ${ion}/${N} times (expect ≪ 50%)`);
+    }
+    const rng = mulberry32(42);
+    const seq = [rng(), rng(), rng()];
+    assert(seq.every((x) => x >= 0 && x < 1) && new Set(seq).size === 3, "mulberry32 produces varied numbers in [0,1)");
+    assert(decodeHash(encodeHash({ seed: 123, length: 15 })).seed === 123, "hash round-trips seed");
+    assert(decodeHash("#s=abc&l=25").seed === undefined, "hash rejects a non-numeric seed");
+    assert(dateSeed(new Date(2026, 8, 21)) === 20260921, "dateSeed is YYYYMMDD");
+
+    // ---- metronome helper ----
+    const bt = nextBeatTimes(1, 120, 4);
+    assert(bt.join(",") === "1,1.5,2,2.5", "nextBeatTimes at 120 bpm");
+
+    // ---- storage helpers ----
+    const hist = [
+      { date: "2026-09-19", items: [{ type: "scale", id: "dorian", key: "Bb" }] },
+      { date: "2026-09-20", items: [{ type: "scale", id: "dorian", key: "F" }, { type: "arpeggio", id: "maj7", key: "C" }] },
+    ];
+    const lm = lastPractisedMap(hist);
+    assert(lm["scale:dorian"] === "2026-09-20" && lm["scale:dorian@Bb"] === "2026-09-19", "lastPractisedMap");
+    const st = stats(hist, "2026-09-21");
+    assert(st.streak === 2 && st.total === 3 && st.last21 === 2, `stats: streak ${st.streak}, total ${st.total}, last21 ${st.last21}`);
+
+    out.innerHTML += `\n<b>${pass} passed, ${fail} failed</b>\n`;
+    document.title = (fail ? "✗ " : "✓ ") + document.title;
+    console.log(`${pass} passed, ${fail} failed`);
+  </script>
+</body>
+</html>

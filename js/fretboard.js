@@ -1,0 +1,76 @@
+// Hand-written SVG fretboard. Horizontal, nut on the left, low E at the bottom.
+// Pure function of its options; re-render by calling again.
+
+const TUNING = [64, 59, 55, 50, 45, 40]; // top→bottom: E4 B3 G3 D3 A2 E2 (MIDI)
+const MARKERS = { 3: 1, 5: 1, 7: 1, 9: 1, 12: 2, 15: 1, 17: 1, 19: 1, 21: 1 };
+
+const ROLE_STYLE = {
+  root:    { fill: "var(--accent)", stroke: "var(--accent)", text: "var(--accent-fg)", weight: 700 },
+  chord:   { fill: "var(--second)", stroke: "var(--second)", text: "var(--accent-fg)", weight: 600 },
+  ext:     { fill: "var(--bg)", stroke: "var(--second)", text: "var(--second)", weight: 500 },
+  scale:   { fill: "var(--bg)", stroke: "var(--fg)", text: "var(--fg)", weight: 500 },
+  passing: { fill: "var(--bg)", stroke: "var(--muted)", text: "var(--muted)", weight: 400, dash: "3 2" },
+};
+
+/**
+ * @param {HTMLElement} container
+ * @param {object} o
+ * @param {number} [o.frets=15]
+ * @param {"names"|"degrees"|"none"} [o.labels="names"]
+ * @param {Array<{chroma:number,name:string,label:string,role:string}>} o.notes
+ */
+export function renderFretboard(container, { frets = 15, labels = "names", notes = [] }) {
+  const byChroma = new Map(notes.map((n) => [n.chroma, n]));
+  const fretW = 46, nutW = 34, strH = 24, top = 26, left = 8, right = 8;
+  const W = left + nutW + frets * fretW + right;
+  const H = top + strH * 5 + 30;
+  const nutX = left + nutW;
+  const fretX = (f) => nutX + f * fretW; // x of fret wire f (f ≥ 1)
+  const strY = (s) => top + s * strH;
+  const r = 10;
+
+  let s = "";
+  // fretboard background
+  s += `<rect x="${nutX}" y="${strY(0) - 8}" width="${frets * fretW}" height="${strH * 5 + 16}" rx="2" style="fill: var(--bg-2); stroke: none"/>`;
+  // markers
+  for (let f = 1; f <= frets; f++) {
+    const m = MARKERS[f];
+    if (!m) continue;
+    const cx = fretX(f) - fretW / 2;
+    if (m === 1) s += `<circle cx="${cx}" cy="${strY(2.5)}" r="4.5" style="fill: var(--rule-soft)"/>`;
+    else {
+      s += `<circle cx="${cx}" cy="${strY(1.5)}" r="4.5" style="fill: var(--rule-soft)"/>`;
+      s += `<circle cx="${cx}" cy="${strY(3.5)}" r="4.5" style="fill: var(--rule-soft)"/>`;
+    }
+  }
+  // nut + frets
+  s += `<rect x="${nutX - 3}" y="${strY(0) - 8}" width="4" height="${strH * 5 + 16}" style="fill: var(--fg)"/>`;
+  for (let f = 1; f <= frets; f++) {
+    s += `<line x1="${fretX(f)}" y1="${strY(0) - 8}" x2="${fretX(f)}" y2="${strY(5) + 8}" style="stroke: var(--muted); stroke-width: 1.2"/>`;
+    s += `<text x="${fretX(f) - fretW / 2}" y="${strY(5) + 24}" text-anchor="middle" style="fill: var(--muted); font: 11px var(--mono)">${f}</text>`;
+  }
+  // strings (thicker toward the bottom)
+  for (let i = 0; i < 6; i++) {
+    s += `<line x1="${nutX - 3}" y1="${strY(i)}" x2="${fretX(frets)}" y2="${strY(i)}" style="stroke: var(--fg); stroke-width: ${0.8 + i * 0.35}; opacity: .8"/>`;
+  }
+  // notes
+  for (let i = 0; i < 6; i++) {
+    for (let f = 0; f <= frets; f++) {
+      const chroma = (TUNING[i] + f) % 12;
+      const n = byChroma.get(chroma);
+      if (!n) continue;
+      const st = ROLE_STYLE[n.role] || ROLE_STYLE.scale;
+      const cx = f === 0 ? nutX - 3 - r - 6 : fretX(f) - fretW / 2;
+      const cy = strY(i);
+      s += `<circle cx="${cx}" cy="${cy}" r="${r}" style="fill: ${st.fill}; stroke: ${st.stroke}; stroke-width: 1.6${st.dash ? `; stroke-dasharray: ${st.dash}` : ""}"/>`;
+      if (labels !== "none") {
+        const txt = labels === "degrees" ? n.label : n.name;
+        const fs = txt.length > 2 ? 9 : 10.5;
+        s += `<text x="${cx}" y="${cy + 3.6}" text-anchor="middle" style="fill: ${st.text}; font: ${st.weight} ${fs}px var(--sans)">${txt}</text>`;
+      }
+    }
+  }
+  // Keep the circles readable on phones: below ~85% of natural size the
+  // diagram scrolls horizontally instead of shrinking further.
+  container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="min-width: ${Math.round(W * 0.85)}px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Fretboard diagram">${s}</svg>`;
+}
