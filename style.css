@@ -17,7 +17,7 @@
           "Roboto Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --metro-h: 96px;
-  --stave-fg: #ece3d5;
+  --stave-fg: #ffffff;
 }
 :root[data-theme="light"] {
   --bg: #faf6ee;

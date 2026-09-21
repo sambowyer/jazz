@@ -6,8 +6,20 @@ import { voiceLeadGuideTones, stackChord, midiOf } from "./theory.js";
 const VF = globalThis.Vex.Flow;
 const { Renderer, Stave, StaveNote, Voice, Formatter, Accidental, Annotation, Barline } = VF;
 
-const SYSTEM_H = 130;
-const STAVE_Y = 24;
+// VexFlow draws the top stave line 40px below the Stave's y and the bottom
+// line 80px below it. Ledger-line notes hang further, so system height is
+// computed from the actual pitch range rather than fixed.
+const LINE_TOP = 40, LINE_BOTTOM = 80, STEP = 5; // px per staff step (half a line space)
+
+/** Pixels needed above the top line / below the bottom line for these MIDI notes. */
+function extent(midis) {
+  const lo = Math.min(...midis), hi = Math.max(...midis);
+  const steps = (semis) => Math.ceil((semis * 7) / 12); // ≈ diatonic steps
+  return {
+    above: hi > 77 ? steps(hi - 77) * STEP + 10 : 0,   // F5 is the top line
+    below: lo < 64 ? steps(64 - lo) * STEP + 10 : 0,   // E4 is the bottom line
+  };
+}
 
 function cssVar(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -54,12 +66,14 @@ function renderSequence(container, notes, { annotate = false, keySig = null, dur
   const perSystem = Math.max(4, Math.floor((width - 60) / 30));
   const systems = [];
   for (let i = 0; i < notes.length; i += perSystem) systems.push(notes.slice(i, i + perSystem));
-  const sysH = SYSTEM_H + (annotate ? 36 : 0);
+  const ext = extent(notes.map((n) => n.midi));
+  const topPad = Math.max(0, ext.above - LINE_TOP + 8);
+  const sysH = topPad + LINE_BOTTOM + ext.below + (annotate ? 30 : 0) + 8;
   const h = systems.length * sysH;
   const { ctx } = makeRenderer(container, width, h);
 
   systems.forEach((sys, si) => {
-    const y = STAVE_Y + si * sysH;
+    const y = topPad + si * sysH;
     const stave = new Stave(0, y, width - 1);
     if (si === 0) {
       stave.addClef("treble");
@@ -112,18 +126,22 @@ export function renderProgressionStave(container, p, { view = "guide" } = {}) {
   const perLine = width >= 640 ? 4 : 2;
   const lines = [];
   for (let i = 0; i < bars.length; i += perLine) lines.push(bars.slice(i, i + perLine));
-  const h = lines.length * (SYSTEM_H + 10) + 10;
-  const { ctx } = makeRenderer(container, width, h);
 
   // Pitches per chord
   let voiced;
   if (view === "chords") voiced = chords.map((c) => stackChord(c));
   else voiced = voiceLeadGuideTones(chords.map((c) => c.guide));
 
+  const ext = extent(voiced.flat().map(midiOf));
+  const topPad = Math.max(0, ext.above + 22 - LINE_TOP); // chord symbols sit above the notes
+  const lineH = topPad + LINE_BOTTOM + ext.below + 12;
+  const h = lines.length * lineH;
+  const { ctx } = makeRenderer(container, width, h);
+
   const clefW = 62;
   let chordIdx = 0;
   lines.forEach((line, li) => {
-    const y = STAVE_Y + 6 + li * (SYSTEM_H + 10);
+    const y = topPad + li * lineH;
     const barW = Math.floor((width - 1 - clefW) / perLine);
     line.forEach((bar, bi) => {
       const isFirst = bi === 0;
